@@ -48,7 +48,7 @@ To get a local copy up and running, follow these simple steps.
 Make sure you have the following installed on your system:
 
 * **Node.js:** Version 18.17.0 or higher.
-* **Python:** Version 3.8 or higher.
+* **Python:** Version 3.10 or higher.
 * **Redis:** The easiest way to run Redis is with Docker.
     ```sh
     docker run --name rosterbot-redis -p 6379:6379 -d redis
@@ -78,7 +78,6 @@ Make sure you have the following installed on your system:
         ```sh
         pip install -r requirements.txt
         ```
-        *(Note: You may need to create a `requirements.txt` file with FastAPI, Uvicorn, OpenAI, Redis, etc.)*
     * Create a `.env` file in the `backend` directory and add your OpenAI API key:
         ```
         api_key="sk-..."
