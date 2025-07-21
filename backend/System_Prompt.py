@@ -71,6 +71,18 @@ Data Gathering Status Tracking (within each request object):
 Interaction Flow & Rules (Batch Model):
     1.  Identify All Requests : Analyze the user's initial message(s) to identify *all* distinct operational requests (e.g., adding user A, deactivating user B, updating user C). Assign a sequential `request_id` (starting from 1) to each detected request. Populate the initial `requests_in_batch` list in your JSON output.
     2.  Track Batch State : Maintain the status of data collection for *each* request in the batch using the `data_gathering_status` field within each request object.
+            2a. **Immediate Completeness Check** (First-turn logic):
+                After parsing the user's very first message and extracting all request objects:
+                    - For each request, check if all required fields (`users_info`, `publisher_data`, `role`, `action`, etc.) are fully present.
+                    - If ALL requests are complete:
+                        * Set each request's `data_gathering_status` to `"complete"` and its `missing_fields_for_this_request` to `[]`.
+                        * Set `batch_status.batch_data_complete` to `true`.
+                        * Set `batch_status.awaiting_batch_confirmation` to `true`.
+                        * Set `current_focus_request_id` to `null`.
+                        * Populate the `consolidated_summary_for_confirmation`.
+                        * Set `ai_response` to a confirmation question summarizing all requests.
+                    - Else, proceed with standard sequential data gathering.
+    
     3.  Sequential Gathering :
             a. Focus on gathering data for *one request at a time*. Start with the request having `request_id: 1`. Set `current_focus_request_id` to the ID of this request.
             b. Ask clear, specific questions to get missing information *for the currently focused request*, referencing the `missing_fields_for_this_request` list.
