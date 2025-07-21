@@ -85,6 +85,7 @@ async def post_message(session_id: str, message: MessageRequest):
     conversation_history = state["conversation_history"]
     active_requests_batch = state["active_requests_batch"]
 
+
     # --- THIS IS THE KEY ADDITION ---
     # Handle the special trigger from the frontend to generate the final summary
     if message.text == "ACTION:SUMMARIZE_RESULTS":
@@ -93,7 +94,7 @@ async def post_message(session_id: str, message: MessageRequest):
         summary_json = state_manager.redis_client.get(summary_key)
         
         if not summary_json:
-            ai_response_data = {"ai_response": "Processing is complete."}
+            ai_response_data = {"ai_response": "An Error Occured while Validating your requests"}
             state["current_bot_state"] = BotState.FINALIZING
             state_manager.save_state(session_id, state)
             return ai_response_data
@@ -103,17 +104,20 @@ async def post_message(session_id: str, message: MessageRequest):
         summary_text = "Processing is complete.\n"
         if summary_data.get("successes"):
             summary_text += "\nSuccessful Actions:\n- " + "\n- ".join(summary_data["successes"])
+        if summary_data.get("action_errors"): # Handling the action failure case (if request failed during performing action)
+            summary_text+=(f"Unfortunately, the following actions failed:\n- " + "\n- ".join(summary_data["action_errors"]))
         if summary_data.get("validation_errors"):
             summary_text += "\n\nValidation Errors:\n- " + "\n- ".join(summary_data["validation_errors"])
 
         context_msg = (
             f"CONTEXT: You have just finished processing a batch. Here is the result:\n{summary_text}\n\n"
-            "Your task is to present this summary to the user in a clear, friendly, conversational way, and thanks for visiting us."
+            "Your task is to present this summary to the user in a clear, friendly, conversational way. "
+            "Acknowledge any failures directly but maintain a helpful tone. Thank the user for visiting."
         )
         state["conversation_history"].append({"role": "system", "content": context_msg})
         state["current_bot_state"] = BotState.FINALIZING
         # FIX: Clear the batch after processing to prevent incorrect confirmations
-        #state["active_requests_batch"] =    To Do
+        state["active_requests_batch"] = []
         state_manager.redis_client.delete(summary_key) # Clean up summary from Redis
     else:
         state["conversation_history"].append({"role": "user", "content": message.text})

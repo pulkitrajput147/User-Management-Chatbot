@@ -18,6 +18,8 @@ def _validate_data_with_salesforce(request_data: dict) -> (bool, str):
 
     return True, f"Validation Successful for Req ID {request_data.get('request_id')}"
 
+    #return False, f"Validation Failed for Req ID {request_data.get('request_id')}"
+    
 def _process_action_api_call(request_data: dict) -> (bool, str):
     """Placeholder for synchronous action logic."""
     logger.info(f"PROCESSING: Req ID {request_data.get('request_id')}")
@@ -26,7 +28,10 @@ def _process_action_api_call(request_data: dict) -> (bool, str):
     # Your original action logic here...
     users = request_data.get('users_info',)
     user_desc = ", ".join([u.get('email') or u.get('name', 'Unknown') for u in users])
+
     return True, f"Action Completed: Successfully processed request for {user_desc}."
+
+    #return False, f"Process Failed for  request for {user_desc}."
 
 async def validate_and_process_batch(session_id: str, batch_to_process: list):
     """
@@ -57,7 +62,7 @@ async def validate_and_process_batch(session_id: str, batch_to_process: list):
     # --- Processing Phase ---
     if not validated_requests:
         yield {"type": "phase", "status": "complete", "message": "No requests passed validation."}
-        return
+        #return
 
     yield {"type": "phase", "status": "processing", "message": "Starting processing for validated requests..."}
     for request in validated_requests:
