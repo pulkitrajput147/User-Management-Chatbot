@@ -85,48 +85,6 @@ async def post_message(session_id: str, message: MessageRequest):
     conversation_history = state["conversation_history"]
     active_requests_batch = state["active_requests_batch"]
 
-
-    # If the bot is waiting for confirmation and the user says yes...
-    # if current_bot_state == BotState.AWAITING_BATCH_CONFIRMATION and message.text.lower() in ["yes", "yes, proceed."]:
-    #     logger.info(f"User confirmed batch for session {session_id}. Processing...")
-
-        
-    #     all_validated, validation_errors, action_results = await services.validate_and_process_batch(session_id, active_requests_batch)
-        
-    #     summary_text = ""
-    #     if action_results:
-    #         summary_text += "The following requests have been successfully processed:\n- " + "\n- ".join(action_results)
-    #     if not all_validated:
-    #         summary_text += "\n\nThe following requests failed validation and were not processed:\n- " + "\n- ".join(validation_errors)
-        
-    #     summary_text += "\n\nThanks for Visiting Us?"
-
-    #     # 3. Prepare a direct response payload without calling the AI.
-    #     response_payload = {"ai_response": summary_text}
-        
-    #     # 4. Update the state and save it.
-    #     state["active_requests_batch"] =[]
-    #     state["current_bot_state"] = BotState.FINALIZING
-    #     state["conversation_history"].append({"role": "assistant", "content": summary_text}) # Add the real summary to history
-    #     state_manager.save_state(session_id, state)
-        
-    #     return response_payload
-    
-    # else: # For all other conversational turns, including the first one...
-    #     if current_bot_state == BotState.AWAITING_BATCH_CONFIRMATION:
-    #         # This handles the case where the user says "no" or provides corrections
-    #         context_msg = "CONTEXT: The user has seen the batch summary and wants to make a change. Analyze their new input and either ask for clarification or update the batch and present it again for confirmation."
-    #         conversation_history.append({"role": "system", "content": context_msg})
-        
-    #     # In all other cases, the state is GATHERING until the AI says otherwise.
-    #     state["current_bot_state"] = BotState.GATHERING
-
-
-
-
-
-
-
     # --- THIS IS THE KEY ADDITION ---
     # Handle the special trigger from the frontend to generate the final summary
     if message.text == "ACTION:SUMMARIZE_RESULTS":
