@@ -7,6 +7,16 @@ from System_Prompt import SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
+
+try:
+    redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+    redis_client.ping()
+    logger.info("State Manager connected to Redis.")
+except redis.exceptions.ConnectionError as e:
+    logger.critical(f"State Manager could not connect to Redis: {e}")
+    raise
+
+
 # This should match the Enum in main.py
 class BotState(Enum):
     GATHERING = auto()
@@ -16,14 +26,6 @@ class BotState(Enum):
     FINALIZING = auto() # Ready to ask concluding question
     PROCESSING = auto()
     ERROR = auto() # An unrecoverable error occurred
-
-try:
-    redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
-    redis_client.ping()
-    logger.info("State Manager connected to Redis.")
-except redis.exceptions.ConnectionError as e:
-    logger.critical(f"State Manager could not connect to Redis: {e}")
-    raise
 
 def load_state(session_id: str) -> dict:
     """
@@ -44,6 +46,7 @@ def load_state(session_id: str) -> dict:
             "active_requests_batch": [],
             "processed_results_summary": [],
             "current_bot_state": BotState.GATHERING,
+            "user_email": None  # *** This line is added to support authentication ***
         }
 
 def save_state(session_id: str, state: dict):

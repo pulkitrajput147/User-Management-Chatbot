@@ -4,7 +4,7 @@ import json
 import os
 import logging
 import uuid
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -20,6 +20,7 @@ load_dotenv()
 from System_Prompt import SYSTEM_PROMPT
 import state_manager
 import services
+from auth import router as auth_router, get_current_user
 
 # --- Configuration ---
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
@@ -36,6 +37,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --- Include the new authentication router ---
+# This makes the /auth/login endpoint available
+app.include_router(auth_router)
 
 # --- State Machine (mirrors state_manager) ---
 class BotState(Enum):
@@ -62,25 +68,42 @@ processing_streams = {}
 # --- API Endpoints ---
 
 @app.post("/sessions", response_model=SessionResponse, status_code=201)
-async def create_session():
-    """Creates a new chat session and returns its ID."""
+async def create_session(current_user: dict = Depends(get_current_user)):
+    """
+    Creates a new chat session, now associated with the logged-in user.
+    This endpoint is now protected and requires a valid token.
+    """
+    user_email = current_user.get("email")
     session_id = str(uuid.uuid4())
-    state = state_manager.load_state(session_id) # This will create a new default state
+    state = state_manager.load_state(session_id) # Creates a new default state
+    state["user_email"] = user_email # Associate session with user
     state_manager.save_state(session_id, state)
-    logger.info(f"New session created: {session_id}")
-    return {"session_id": session_id}
+    logger.info(f"New session created: {session_id} for user: {user_email}")
+    return {"session_id": session_id, "user_email": user_email}
 
 
 @app.delete("/sessions/{session_id}", status_code=204)
-async def end_session(session_id: str):
-    """Deletes a session, effectively starting over."""
+async def end_session(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Deletes a session. Protected endpoint."""
+    state = state_manager.load_state(session_id)
+    if state.get("user_email") != current_user.get("email"):
+         raise HTTPException(status_code=403, detail="Not authorized to delete this session")
+    
     state_manager.delete_session(session_id)
+    if session_id in processing_streams:
+        del processing_streams[session_id]
+    logger.info(f"Session {session_id} deleted by user {current_user.get('email')}")
     return
 
 @app.post("/sessions/{session_id}/messages")
-async def post_message(session_id: str, message: MessageRequest):
+async def post_message(session_id: str, message: MessageRequest,current_user: dict = Depends(get_current_user)):
     """Handles a regular user message in the conversation."""
     state = state_manager.load_state(session_id)
+
+    # Security check: ensure the user accessing the session is the one who created it
+    if state.get("user_email") != current_user.get("email"):
+        raise HTTPException(status_code=403, detail="Not authorized to access this session")
+    
     current_bot_state = state["current_bot_state"]
     conversation_history = state["conversation_history"]
     active_requests_batch = state["active_requests_batch"]
@@ -94,7 +117,7 @@ async def post_message(session_id: str, message: MessageRequest):
         summary_json = state_manager.redis_client.get(summary_key)
         
         if not summary_json:
-            ai_response_data = {"ai_response": "An Error Occured while Validating your requests"}
+            ai_response_data = {"ai_response": "An Error Occured. Please try again"}
             state["current_bot_state"] = BotState.FINALIZING
             state_manager.save_state(session_id, state)
             return ai_response_data
@@ -148,12 +171,16 @@ async def post_message(session_id: str, message: MessageRequest):
         raise HTTPException(status_code=500, detail="Error communicating with AI service.")
 
 @app.post("/sessions/{session_id}/process-batch", status_code=202)
-async def process_batch(session_id: str, background_tasks: BackgroundTasks):
+async def process_batch(session_id: str, background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
     """
     Accepts the request to process a batch and starts it as a background task.
     Returns immediately so the UI does not freeze.
     """
     state = state_manager.load_state(session_id)
+
+    if state.get("user_email") != current_user.get("email"):
+        raise HTTPException(status_code=403, detail="Not authorized to process this batch")
+    
     batch_to_process = state.get("active_requests_batch",)
     
     if not batch_to_process:
@@ -167,7 +194,11 @@ async def process_batch(session_id: str, background_tasks: BackgroundTasks):
     
 
 @app.get("/sessions/{session_id}/process-batch/status")
-async def get_batch_status(session_id: str):
+async def get_batch_status(session_id: str, current_user: dict = Depends(get_current_user)):
+    state = state_manager.load_state(session_id)
+    if state.get("user_email") != current_user.get("email"):
+        raise HTTPException(status_code=403, detail="Not authorized to view this status")
+    
     if session_id not in processing_streams:
         raise HTTPException(status_code=404, detail="No active processing stream found for this session.")
 

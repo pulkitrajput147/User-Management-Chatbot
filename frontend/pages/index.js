@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/router'; // Import useRouter for redirection
 import Message from '@/components/Message';
+import Head from 'next/head'; // <--- THIS IS THE MISSING LINE
 import BatchConfirmation from '@/components/BatchConfirmation';
 import StatusDashboard from '@/components/StatusDashboard';
 
@@ -7,6 +9,39 @@ import StatusDashboard from '@/components/StatusDashboard';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 
 const API_URL = 'http://localhost:8000'; // Your FastAPI backend URL
+
+// --- Helper function for authenticated API calls(This function attaches the auth token to every request.) ---
+const fetchWithAuth = async (url, options = {}) => {
+  const token = window.localStorage.getItem('userToken');
+
+  const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+  };
+
+  if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+  }else {
+    // If there's no token at all, don't even bother making the request.
+    // Redirect straight to login. This helps break loops.
+    window.location.href = '/login';
+    // Throw an error to stop the execution of the calling function.
+    throw new Error('No authentication token found. Redirecting to login.');
+}
+
+  const response = await fetch(url, { ...options, headers });
+
+  // If the token is expired or invalid, the server will return a 401 error.
+  // This logs the user out and redirects them to the login page.
+  if (response.status === 401) {
+      localStorage.removeItem('userToken');
+      // Use window.location to force a full page reload to the login screen
+      window.location.href = '/login'; 
+      throw new Error('Session expired. Please log in again.');
+  }
+
+  return response;
+};
 
 // --- NEW: Custom Hook for Typing Animation ---
 const useTypingEffect = (text, duration) => {
@@ -44,6 +79,7 @@ const AnimatedHeader = () => {
 export default function Home() {
 
   //const = useState(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [messages, setMessages] = useState([]); // FIX: Initialize with an empty array
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -54,11 +90,32 @@ export default function Home() {
   const { text, isListening, startListening, stopListening, hasRecognitionSupport } = useSpeechRecognition();
 
   const chatEndRef = useRef(null);
+  const router = useRouter(); // Initialize router for navigation
 
     // This ref helps us track the previous listening state
   const prevIsListening = useRef(false);
 
+    // --- 1. AUTHENTICATION CHECK --- (This effect runs once when the component mounts.)
+  // It checks for a token and redirects to login if it's missing. This now runs only ONCE when the component first loads.
+    useEffect(() => {
+      const token = localStorage.getItem('userToken');
+      if (!token) {
+        router.push('/login');
+      } else {
+        // If a token exists, we can stop the auth loading and proceed.
+        setIsAuthLoading(false);
+        // Only create a session if one doesn't already exist.
+        if (!sessionId) {
+          createSession();
+        }
+      }
+    }, []); // The empty array [] is crucial to prevent the infinite loop.
+  
 
+      // Effect to scroll to the bottom of the chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  });
     // --- NEW: Effect to update the input field with the transcript ---
     useEffect(() => {
       if (text) {
@@ -66,39 +123,23 @@ export default function Home() {
       }
     }, [text]);
 
-      // --- NEW: Effect to auto-send message on speech end ---
-    // useEffect(() => {
-    //   // Check if listening has just stopped (i.e., changed from true to false)
-    //   if (prevIsListening.current && !isListening && input.trim()) {
-    //     handleSend();
-    //   }
-    //   // Update the ref for the next render
-    //   prevIsListening.current = isListening;
-    // }, [isListening, input]);
 
+  const createSession = async () => {
+    try {
+      // Use the authenticated fetch function
+      const res = await fetchWithAuth(`${API_URL}/sessions`, { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to create session.');
+      
+      const data = await res.json();
 
-   // Effect to create a session on initial load
-   useEffect(() => {
-    if (sessionId) return;
-
-    const createSession = async () => {
-      try {
-        const res = await fetch(`${API_URL}/sessions`, { method: 'POST' });
-        const data = await res.json();
-        setSessionId(data.session_id);
-        setMessages([{ role: 'assistant', content: 'Hello! How can I assist you with user management tasks today?' }]);
-      } catch (error) {
-        console.error("Failed to create session:", error);
-        setMessages([{ role: 'assistant', content: 'Error: Could not connect to the bot service.' }]);
-      }
-    };
-    createSession();
-  },);
-
-  // Effect to scroll to the bottom of the chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  },);
+      console.log('Session data from backend:', data);
+      setSessionId(data.session_id);
+      setMessages([{ role: 'assistant', content: `Hello! How can I assist you today?` }]);
+    } catch (error) {
+      console.error("Session creation failed:", error);
+      //setMessages([{ role: 'assistant', content: 'Error: Could not connect to the bot service.' }]);
+    }
+  };
 
   const sendMessageToServer = async (text) => {
     if (!sessionId) return;
@@ -106,7 +147,7 @@ export default function Home() {
     setConfirmationData(null);
 
     try {
-      const res = await fetch(`${API_URL}/sessions/${sessionId}/messages`, {
+      const res = await fetchWithAuth(`${API_URL}/sessions/${sessionId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
@@ -150,7 +191,7 @@ export default function Home() {
       setMessages(prev => [...prev, userConfirmationMessage, statusCardMessage]);
     
     try {
-      await fetch(`${API_URL}/sessions/${sessionId}/process-batch`, { method: 'POST' });
+      await fetchWithAuth(`${API_URL}/sessions/${sessionId}/process-batch`, { method: 'POST' });
       listenForStatusUpdates();
     } catch (error) {
       console.error("Failed to start batch processing:", error);
@@ -165,7 +206,7 @@ export default function Home() {
 
     setIsLoading(true); // Show the "Thinking..." indicator
     try {
-      const res = await fetch(`${API_URL}/sessions/${sessionId}/messages`, {
+      const res = await fetchWithAuth(`${API_URL}/sessions/${sessionId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: userRejectionMessage.content }),
@@ -192,11 +233,22 @@ export default function Home() {
     };
   
 
-
   const listenForStatusUpdates = () => {
     // FIX: Clear previous events before showing the new card.
     setProcessingEvents([]);
-    const eventSource = new EventSource(`${API_URL}/sessions/${sessionId}/process-batch/status`);
+
+
+        // --- 2. AUTHENTICATE EVENTSOURCE ---
+    // Pass the token as a query parameter.
+    // NOTE: Your backend 'get_current_user' dependency must be updated to check for this query parameter.
+    const token = localStorage.getItem('userToken');
+    if (!token) {
+        router.push('/login');
+        return;
+    }
+
+    // Pass the token as a query parameter for EventSource authentication.
+    const eventSource = new EventSource(`${API_URL}/sessions/${sessionId}/process-batch/status?token=${encodeURIComponent(token)}`);
 
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -231,76 +283,97 @@ export default function Home() {
     await sendMessageToServer("ACTION:SUMMARIZE_RESULTS");
   };
 
-  return (
-    <div className="bg-gray-800 text-white flex flex-col h-screen font-sans">
-      <header className="p-4 border-b border-gray-700 flex justify-between items-center shrink-0">
-        <div className="flex-1 flex justify-center"><AnimatedHeader /></div>
-        <button onClick={() => window.location.reload()} className="px-4 py-2 text-sm font-medium text-gray-300 bg-gray-700 rounded-lg hover:bg-gray-600">Start Over</button>
-      </header>
+    // --- 3. LOGOUT HANDLER ---
+  const handleLogout = () => {
+      localStorage.removeItem('userToken');
+      router.push('/login');
+    };
 
-      <main className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-4xl mx-auto w-full space-y-6">
-          {/*{messages.map((msg, i) => <Message key={i} message={msg} />)} */}
-                    {/* FIX: The main render loop now handles different message types. */}
-          {Array.isArray(messages) && messages.map((msg, i) => {
-            if (msg.type === 'status_card') {
-              return (
-                <div key={i} className="flex w-full justify-start">
-                  <StatusDashboard events={msg.events} />
-                </div>
-              );
-            }
-            // Render regular messages
-            return <Message key={i} message={msg} />;
-          })}
+  const handleStartOver = () => {
+      if(sessionId) {
+          fetchWithAuth(`${API_URL}/sessions/${sessionId}`, { method: 'DELETE' });
+      }
+      setSessionId(null);
+      setMessages([]);
+      createSession();
+      // The useEffect will trigger createSession() again.
+  }
 
-          
-          {confirmationData && (
-            <div className="flex w-full justify-start">
-              <BatchConfirmation summary={confirmationData.consolidated_summary_for_confirmation} onConfirm={handleConfirmBatch} onReject={handleRejectBatch} />
-            </div>
-          )}
-
-          {isLoading && <Message message={{ role: 'assistant', content: 'Thinking...' }} />}
-          <div ref={chatEndRef} />
-        </div>
-      </main>
-
-      <footer className="p-4 bg-gray-800 shrink-0">
-        <div className="max-w-3xl mx-auto">
-          <form onSubmit={handleSend} className="flex items-center gap-2 bg-gray-700 rounded-full p-2 shadow-lg">
-            <input
-              id="chat-input"
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Add, Update Role, or Activate/Deactivate User..."
-              className="flex-1 bg-transparent text-white placeholder-gray-400 focus:outline-none px-4 py-2"
-              disabled={isLoading ||!!confirmationData || processingEvents.length > 0}
-            />
-            {/* --- NEW: Microphone Button --- */}
-            {hasRecognitionSupport && (
-              <button type="button" onClick={handleMicClick} 
-              className={`p-3 rounded-full transition-colors ${isListening ? 'bg-red-500 animate-pulse' : 'bg-gray-600 hover:bg-gray-500'} disabled:bg-gray-500`}>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                  <path d="M7 4a3 3 0 0 1 6 0v6a3 3 0 1 1-6 0V4Z" />
-                  <path d="M5.5 4.5a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-6Z" />
-                  <path d="M10 15.5a4.5 4.5 0 0 1-4.5-4.5a.5.5 0 0 1 1 0a3.5 3.5 0 0 0 7 0a.5.5 0 0 1 1 0a4.5 4.5 0 0 1-4.5 4.5Z" />
-                </svg>
-              </button>
-            )}
-            <button
-              type="submit"
-              className="p-3 bg-blue-600 rounded-full hover:bg-blue-500 disabled:bg-gray-500"
-              disabled={isLoading ||!input.trim() ||!!confirmationData || processingEvents.length > 0}
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path d="M3.105 3.105a.75.75 0 0 1.814-.156l14.686 4.895a.75.75 0 0 1 0 1.312L3.919 14.05a.75.75 0 0 1-.814-.156l-.618-.93A.75.75 0 0 1 2.73 12h5.02a.75.75 0 0 0 0-1.5H2.73a.75.75 0 0 1.23-.564l.618-.93Z" /></svg>
-            </button>
-          </form>
-        </div>
-      </footer>
-    </div>
-  );
-}
-
+    // --- THIS IS THE RENDER-SIDE PART OF THE AUTH GUARD ---
+    return (
+      <>
+        <Head>
+          {/* This title is static and safe for Server-Side Rendering */}
+          <title>User Management Bot</title>
+        </Head>
   
+        {isAuthLoading ? (
+          // Loading Screen: Shown while authentication is being checked.
+          <div className="flex items-center justify-center h-screen bg-gray-800 text-white">
+              <svg className="animate-spin -ml-1 mr-3 h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span>Authenticating...</span>
+          </div>
+        ) : (
+          // Main Application UI: Shown only after authentication is confirmed.
+          <div className="bg-gray-800 text-white flex flex-col h-screen font-sans">
+            <header className="p-4 border-b border-gray-700 flex justify-between items-center shrink-0">
+              <div className="flex-1 flex justify-start">
+                <button onClick={handleLogout} className="px-4 py-2 text-sm font-medium text-gray-300 bg-red-800 rounded-lg hover:bg-red-700">
+                  Sign Out
+                </button>
+              </div>
+              <div className="flex-1 flex justify-center"><AnimatedHeader /></div>
+              <div className="flex-1 flex justify-end">
+                <button onClick={handleStartOver} className="px-4 py-2 text-sm font-medium text-gray-300 bg-gray-700 rounded-lg hover:bg-gray-600">
+                  Start Over
+                </button>
+              </div>
+            </header>
+            <main className="flex-1 overflow-y-auto p-6">
+              <div className="max-w-4xl mx-auto w-full space-y-6">
+                {messages.map((msg, i) => {
+                  if (msg.type === 'status_card') {
+                    return <div key={i} className="flex w-full justify-start"><StatusDashboard events={msg.events} /></div>;
+                  }
+                  return <Message key={i} message={msg} />;
+                })}
+                {confirmationData && (
+                  <div className="flex w-full justify-start">
+                    <BatchConfirmation summary={confirmationData.consolidated_summary_for_confirmation} onConfirm={handleConfirmBatch} onReject={handleRejectBatch} />
+                  </div>
+                )}
+                {isLoading && <Message message={{ role: 'assistant', content: 'Thinking...' }} />}
+                <div ref={chatEndRef} />
+              </div>
+            </main>
+            <footer className="p-4 bg-gray-800 shrink-0">
+              <div className="max-w-3xl mx-auto">
+                <form onSubmit={handleSend} className="flex items-center gap-2 bg-gray-700 rounded-full p-2 shadow-lg">
+                  <input
+                    id="chat-input"
+                    type="text"
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Add, Update Role, or Activate/Deactivate User..."
+                    className="flex-1 bg-transparent text-white placeholder-gray-400 focus:outline-none px-4 py-2"
+                    disabled={isLoading || !!confirmationData}
+                  />
+                  {hasRecognitionSupport && (
+                    <button type="button" onClick={handleMicClick} className={`p-3 rounded-full transition-colors ${isListening ? 'bg-red-500 animate-pulse' : 'bg-gray-600 hover:bg-gray-500'}`}>
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path d="M7 4a3 3 0 0 1 6 0v6a3 3 0 1 1-6 0V4Z" /><path d="M5.5 4.5a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-6Z" /><path d="M10 15.5a4.5 4.5 0 0 1-4.5-4.5a.5.5 0 0 1 1 0a3.5 3.5 0 0 0 7 0a.5.5 0 0 1 1 0a4.5 4.5 0 0 1-4.5 4.5Z" /></svg>
+                    </button>
+                  )}
+                  <button type="submit" className="p-3 bg-blue-600 rounded-full hover:bg-blue-500 disabled:bg-gray-500" disabled={isLoading || !input.trim() || !!confirmationData}>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5"><path d="M3.105 3.105a.75.75 0 0 1.814-.156l14.686 4.895a.75.75 0 0 1 0 1.312L3.919 14.05a.75.75 0 0 1-.814-.156l-.618-.93A.75.75 0 0 1 2.73 12h5.02a.75.75 0 0 0 0-1.5H2.73a.75.75 0 0 1.23-.564l.618-.93Z" /></svg>
+                  </button>
+                </form>
+              </div>
+            </footer>
+          </div>
+        )}
+      </>
+    );
+  }
