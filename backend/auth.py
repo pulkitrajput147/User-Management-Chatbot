@@ -13,10 +13,6 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 AUTHORIZED_EMAILS = {
-    "john32@gmail.com",
-    "testuser1@example.com",
-    "admin@example.com",
-    "jane.doe@testing.co",
     "pulkitrajput147@gmail.com" # Added your email for testing
 }
 

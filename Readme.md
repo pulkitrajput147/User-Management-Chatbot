@@ -15,6 +15,8 @@ The bot intelligently gathers all required information, handles ambiguity, and p
 * **Conversational Interface:** Interact with the bot using natural language.
 * **Batch Processing:** Handles multiple distinct user management requests in a single conversation.
 * **AI-Driven State Management:** Leverages GPT-4o to manage the conversational state, correctly identifying when it has enough information to proceed.
+* **Secure Authentication:** Features a JWT-based login system to ensure that only authorized personnel can access the application. Access is managed via an email allowlist, perfect for controlled beta testing or internal use.
+* **Multi-User Ready:** Built on a robust FastAPI backend with Redis-backed session management, allowing multiple operators to use the bot concurrently without their conversations interfering.
 * **Voice-to-Text Input:** A microphone option allows users to speak their requests instead of typing.
 * **Confirmation Step:** Always presents a clear summary of all pending actions for user confirmation before processing, preventing accidental changes.
 * **Modern, Responsive UI:** A clean, Gemini-inspired interface built with Next.js and Tailwind CSS.
@@ -58,6 +60,10 @@ Make sure you have the following installed on your system:
 ### Installation & Setup
 
 1.  **Clone the repository:**
+    ```sh
+    git clone <YOUR_REPOSITORY_URL>
+    cd <YOUR_PROJECT_DIRECTORY>
+    ```
 
 2.  **Setup the Backend:**
     * Navigate to the `backend` directory:
@@ -104,6 +110,6 @@ Make sure you have the following installed on your system:
     Your frontend should now be running on `http://localhost:3000`.
 
 4.  **Open the App:**
-    Open your browser and navigate to `http://localhost:3000` to start using RosterBot!
+    Open your browser and navigate to `http://localhost:3000/login` to sign in and start using RosterBot!
 
 ---
