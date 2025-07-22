@@ -2,7 +2,6 @@
 
 An intelligent, conversational AI assistant for streamlining complex user management tasks. RosterBot understands natural language, handles multiple requests in a single conversation, and reduces the manual effort and potential for errors in user administration.
 
-Demo Video :
 
 ## About The Project
 
@@ -61,7 +60,7 @@ Make sure you have the following installed on your system:
 
 1.  **Clone the repository:**
     ```sh
-    git clone <YOUR_REPOSITORY_URL>
+    git clone <REPOSITORY_URL>
     cd <YOUR_PROJECT_DIRECTORY>
     ```
 
