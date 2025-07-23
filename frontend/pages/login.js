@@ -102,8 +102,8 @@ const LoginPage = () => {
 
                 <div className="relative z-10 w-full max-w-md p-8 space-y-6 bg-gray-900/80 backdrop-blur-md border border-gray-700/50 rounded-2xl shadow-2xl">
                     <div className="text-center">
-                        <h1 className="text-3xl font-bold text-white">Welcome Back</h1>
-                        <p className="text-gray-400 mt-2">Sign in to access the future of user management.</p>
+                        <h1 className="text-3xl font-bold text-white">Welcome</h1>
+                        <p className="text-gray-400 mt-2">Sign in to access the Bot</p>
                     </div>
 
                     <form onSubmit={handleSubmit} className="space-y-6">

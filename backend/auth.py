@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "a_very_secret_key_for_development_only")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24    # Set the token to expire after exactly 24 hours.
 
 AUTHORIZED_EMAILS = {
     "pulkitrajput147@gmail.com" # Added your email for testing
@@ -88,5 +88,5 @@ async def login_for_access_token(request: LoginRequest = Body(...)):
     access_token = create_access_token(
         data={"sub": user_email}, expires_delta=access_token_expires
     )
-    logger.info(f"Successful login for: {user_email}. Token issued.")
+    logger.info(f"Successful login for: {user_email}. Token issued with {ACCESS_TOKEN_EXPIRE_MINUTES} minutes validity.")
     return {"access_token": access_token, "token_type": "bearer"}

@@ -10,9 +10,35 @@ import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 
 const API_URL = 'http://localhost:8000'; // Your FastAPI backend URL
 
+// --- Helper function to check token expiration ---
+const isTokenExpired = (token) => {
+  if (!token) return true;
+  try {
+      // The token is in three parts: header.payload.signature
+      const payloadBase64 = token.split('.')[1];
+      const decodedJson = atob(payloadBase64);
+      const decoded = JSON.parse(decodedJson);
+      // The 'exp' claim is in seconds, so we convert the current time to seconds.
+      const exp = decoded.exp;
+      const now = Date.now() / 1000;
+      return now > exp;
+  } catch (error) {
+      // If token is malformed, treat it as expired.
+      return true;
+  }
+};
+
+
 // --- Helper function for authenticated API calls(This function attaches the auth token to every request.) ---
 const fetchWithAuth = async (url, options = {}) => {
   const token = window.localStorage.getItem('userToken');
+
+  // Proactively check for expiration before making a request.
+  if (isTokenExpired(token)) {
+        window.localStorage.removeItem('userToken');
+        window.location.href = '/login';
+        throw new Error('Session expired. Please log in again.');
+    }
 
   const headers = {
       'Content-Type': 'application/json',
@@ -22,12 +48,11 @@ const fetchWithAuth = async (url, options = {}) => {
   if (token) {
       headers['Authorization'] = `Bearer ${token}`;
   }else {
-    // If there's no token at all, don't even bother making the request.
-    // Redirect straight to login. This helps break loops.
+    // If there's no token at all, don't even bother making the request. (Redirect straight to login. This helps break loops.)
     window.location.href = '/login';
     // Throw an error to stop the execution of the calling function.
     throw new Error('No authentication token found. Redirecting to login.');
-}
+  }
 
   const response = await fetch(url, { ...options, headers });
 
@@ -95,33 +120,36 @@ export default function Home() {
     // This ref helps us track the previous listening state
   const prevIsListening = useRef(false);
 
-    // --- 1. AUTHENTICATION CHECK --- (This effect runs once when the component mounts.)
-  // It checks for a token and redirects to login if it's missing. This now runs only ONCE when the component first loads.
-    useEffect(() => {
-      const token = localStorage.getItem('userToken');
-      if (!token) {
-        router.push('/login');
-      } else {
-        // If a token exists, we can stop the auth loading and proceed.
-        setIsAuthLoading(false);
-        // Only create a session if one doesn't already exist.
-        if (!sessionId) {
-          createSession();
+    // --- 1. AUTHENTICATION CHECK --- (This effect runs once when the component mounts. (It checks for a token and redirects to login if it's missing. This now runs only ONCE when the component first loads.)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+        const token = localStorage.getItem('userToken');
+        // Check if the token is present AND not expired.
+        if (isTokenExpired(token)) {
+            localStorage.removeItem('userToken'); // Clean up expired token
+            router.push('/login');
+        } else {
+            // If token is valid, proceed.
+            setIsAuthLoading(false);
+            if (!sessionId) {
+                createSession();
+            }
         }
-      }
-    }, []); // The empty array [] is crucial to prevent the infinite loop.
+    }
+  }, []);// The empty array [] is crucial to prevent the infinite loop.
   
 
-      // Effect to scroll to the bottom of the chat
+  // Effect to scroll to the bottom of the chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   });
+
     // --- NEW: Effect to update the input field with the transcript ---
-    useEffect(() => {
-      if (text) {
-        setInput(text);
-      }
-    }, [text]);
+  useEffect(() => {
+    if (text) {
+      setInput(text);
+    }
+  }, [text]);
 
 
   const createSession = async () => {
@@ -238,13 +266,11 @@ export default function Home() {
     setProcessingEvents([]);
 
 
-        // --- 2. AUTHENTICATE EVENTSOURCE ---
-    // Pass the token as a query parameter.
-    // NOTE: Your backend 'get_current_user' dependency must be updated to check for this query parameter.
+    // ---  AUTHENTICATE EVENTSOURCE --- (  Pass the token as a query parameter.)
     const token = localStorage.getItem('userToken');
-    if (!token) {
-        router.push('/login');
-        return;
+    if (isTokenExpired(token)) {
+      router.push('/login');
+      return;
     }
 
     // Pass the token as a query parameter for EventSource authentication.
@@ -267,8 +293,6 @@ export default function Home() {
       // FIX: When the "complete" event is received, trigger the final summary.
       if (data.type === 'phase' && data.status === 'complete') {
         eventSource.close();
-        // Use a short timeout to ensure the last event renders before fetching.
-        //setTimeout(() => fetchFinalSummary(), 500);
         getFinalSummary();
       } else {
         setProcessingEvents(prev => [...prev, data]);
@@ -279,11 +303,12 @@ export default function Home() {
       eventSource.close();
     };
   };
+
   const getFinalSummary = async () => {
     await sendMessageToServer("ACTION:SUMMARIZE_RESULTS");
   };
 
-    // --- 3. LOGOUT HANDLER ---
+    // ---  LOGOUT HANDLER ---
   const handleLogout = () => {
       localStorage.removeItem('userToken');
       router.push('/login');
@@ -321,14 +346,14 @@ export default function Home() {
           <div className="bg-gray-800 text-white flex flex-col h-screen font-sans">
             <header className="p-4 border-b border-gray-700 flex justify-between items-center shrink-0">
               <div className="flex-1 flex justify-start">
-                <button onClick={handleLogout} className="px-4 py-2 text-sm font-medium text-gray-300 bg-red-800 rounded-lg hover:bg-red-700">
-                  Sign Out
+                <button onClick={handleStartOver} className="px-4 py-2 text-sm font-medium text-white-300 bg-blue-800 rounded-lg hover:bg-blue-700">
+                  Start Over
                 </button>
               </div>
               <div className="flex-1 flex justify-center"><AnimatedHeader /></div>
               <div className="flex-1 flex justify-end">
-                <button onClick={handleStartOver} className="px-4 py-2 text-sm font-medium text-gray-300 bg-gray-700 rounded-lg hover:bg-gray-600">
-                  Start Over
+                <button onClick={handleLogout} className="px-4 py-2 text-sm font-medium text-gray-300 bg-red-700 rounded-lg hover:bg-red-600">
+                  Sign Out
                 </button>
               </div>
             </header>
